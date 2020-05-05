@@ -67,10 +67,7 @@ static void MX_USART2_UART_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	estado_actual=Esperando;
-	tick_time=0;
-	tick_cont=0;
-	flag=0;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -79,7 +76,14 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  estado_led=Apagado;
+  tempo=0;
+  tiemp=0;
+  tick_time=0;
+  Revisaboton=0;
+  Tsw=4000;
+  Toff=10000;
+  flag=0;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -99,53 +103,77 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
-  {
-	  if (flag==1)
-		  {
-			   switch(estado_actual)
-			  {
-			  case(Esperando):
-					  if(!(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)))
-						  {
-						  estado_actual=Detectado;
-						  contador=0;
-						}
-				break;
-				case(Detectado):
-						if (!(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)))
-						{
-							contador++;
-							if(contador>=10)
-							{
-								estado_actual=Esperandosoltar;
-								contador=0;
-							}
-						}
-						else
-						{
-						estado_actual=Esperando;
-						contador=0;
-						}
-					break;
-			case(Esperandosoltar):
-					if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
-					{
-						estado_actual=Actualizar;
-					}
-					break;
-			case(Actualizar):
-					estado_actual=Esperando;
-					HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-					break;
-				}
-			flag=0;
-		}
-    /* USER CODE END WHILE */
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
-}
+	  {
 
+	  // Dimmer(tick_time,Tsw,Toff,flag);
+	  switch(estado_led)
+	  {
+	  case (Apagado):
+			  if (flag==1){
+				  if(tick_time>=tiemp+Toff)
+				  {
+					  estado_led=Encendido;
+					  tiemp=tick_time;
+					}
+					else
+					{
+						estado_led=Atenuado;
+						tiemp=tick_time;
+					}
+					flag=0;
+				}
+				else{
+				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+				}
+		break;
+		case (Atenuado):
+			if (flag==1){
+				if(tick_time>=tiemp+Tsw)
+				{
+					estado_led=Apagado;
+					tiemp=tick_time;
+				}
+				else
+				{
+					estado_led=Encendido;
+					tiemp=tick_time;
+				}
+				flag=0;
+			}
+			else{
+				if (tick_time>=(33+tempo)){
+					HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+					tempo=tick_time;
+				}
+			}
+		break;
+		case (Encendido):
+				if (flag==1)
+				{
+					if(tick_time>=tiemp+Tsw)
+					{
+						estado_led=Atenuado;
+						tiemp=tick_time;
+					}
+					else
+						{
+						estado_led=Apagado;
+						tiemp=tick_time;
+						}
+					flag=0;
+				}
+				else
+				{
+					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+				}
+		break;
+		}
+
+	  /* USER CODE END WHILE */
+	  /* USER CODE BEGIN 3 */
+	  /* USER CODE END 3 */
+	  }
+}
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -265,12 +293,128 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+//Función para detectar que se activaboton con antirrebote
+
+uint8_t Boton1(void)
+{
+	static estBoton estado_actual=Esperando;
+	static uint8_t contador=0;
+	uint8_t F=0;
+
+	switch(estado_actual)
+	{
+	case(Esperando):
+			if(!(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)))
+			{
+				estado_actual=Detectado;
+				contador=0;
+			}
+	break;
+	case(Detectado):
+			if (!(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)))
+			{
+				contador++;
+				if(contador>=10)
+				{
+					estado_actual=Esperandosoltar;
+					contador=0;
+				}
+			}
+			else
+			{
+				estado_actual=Esperando;
+				contador=0;
+			}
+	break;
+	case(Esperandosoltar):
+			if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
+			{
+				estado_actual=Actualizar;
+			}
+	break;
+	case(Actualizar):
+			F=1;
+			estado_actual=Esperando;
+			//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	break;
+	}
+	return F;
+}
+/*Función del estado del led
+void Dimmer(uint64_t tick_time, uint16_t Tsw, uint16_t Toff, uint8_t *flag){
+	static EstLed estado_led=Apagado;
+	static uint64_t tempo=0;
+	static uint64_t tiemp=0;
+	switch(estado_led)
+	{
+	case (Apagado):
+			if (flag==1){
+				if(tick_time>=tiemp+Toff){
+					estado_led=Encendido;
+					tiemp=tick_time;
+				}
+				else
+				{
+					estado_led=Atenuado;
+					tiemp=tick_time;
+				}
+				flag=0;
+			}
+			else
+			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+	break;
+	case (Atenuado):
+		if (flag==1){
+			if(tick_time>=tiemp+Tsw)
+			{
+				estado_led=Apagado;
+				tiemp=tick_time;
+			}
+			else
+			{
+				estado_led=Encendido;
+				tiemp=tick_time;
+			}
+			flag=0;
+		}
+		else{
+			if (tick_time>=(33+tempo)){
+				HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+				tempo=tick_time;
+			}
+		}
+	break;
+	case (Encendido):
+			if (flag==1)
+			{
+				if(tick_time>=tiemp+Tsw){
+					estado_led=Atenuado;
+					tiemp=tick_time;
+				}
+				else
+					{
+					estado_led=Apagado;
+					tiemp=tick_time;
+					}
+				flag=0;
+			}
+			else
+			{
+				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+			}
+	break;
+	}
+}
+*/
 
 /* USER CODE END 4 */
-
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
